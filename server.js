@@ -2,10 +2,14 @@ const fs = require("fs");
 const bodyParser = require("body-parser");
 const jsonServer = require("json-server");
 const jwt = require("jsonwebtoken");
+const path = require("path");
+
+const pathdb = path.join(__dirname, "database.json");
+const pathuser = path.join(__dirname, "users.json");
 
 const server = jsonServer.create();
-const router = jsonServer.router("./database.json");
-const userdb = JSON.parse(fs.readFileSync("./users.json", "UTF-8"));
+const router = jsonServer.router(pathdb);
+const userdb = JSON.parse(fs.readFileSync(pathuser, "UTF-8"));
 
 server.use(bodyParser.urlencoded({ extended: true }));
 server.use(bodyParser.json());
@@ -36,20 +40,34 @@ function isAuthenticated({ email, password }) {
   );
 }
 
+const isUserExist = ({ email }) => {
+  return (
+    userdb.users.findIndex((user) => {
+      return user.email === email;
+    }) !== -1
+  );
+};
+
+const getInfoUser = ({ email, password }) => {
+  return userdb.users.find((user) => {
+    return user.email === email && user.password === password;
+  });
+};
+
 // Register New User
 server.post("/auth/register", (req, res) => {
   console.log("register endpoint called; request body:");
   console.log(req.body);
   const { email, password } = req.body;
 
-  if (isAuthenticated({ email, password }) === true) {
+  if (isUserExist({ email }) === true) {
     const status = 401;
-    const message = "Email and Password already exist";
+    const message = "Tên tài khoản đã tồn tại";
     res.status(status).json({ status, message });
     return;
   }
 
-  fs.readFile("./users.json", (err, data) => {
+  fs.readFile(pathuser, (err, data) => {
     if (err) {
       const status = 401;
       const message = err;
@@ -66,7 +84,7 @@ server.post("/auth/register", (req, res) => {
     //Add new user
     data.users.push({ id: last_item_id + 1, email: email, password: password }); //add some data
     var writeData = fs.writeFile(
-      "./users.json",
+      pathuser,
       JSON.stringify(data),
       (err, result) => {
         // WRITE
@@ -93,7 +111,7 @@ server.post("/auth/login", (req, res) => {
   const { email, password } = req.body;
   if (isAuthenticated({ email, password }) === false) {
     const status = 401;
-    const message = "Incorrect email or password";
+    const message = "Tài khoản hoặc mật khẩu không đúng";
     res.status(status).json({ status, message });
     return;
   }
@@ -102,10 +120,67 @@ server.post("/auth/login", (req, res) => {
   res.status(200).json({ access_token });
 });
 
+server.get("/user/current", (req, res) => {
+  const verifyTokenResult = verifyToken(req.headers.authorization);
+
+  const user = getInfoUser(verifyTokenResult);
+  if (!user) {
+    const status = 401;
+    const message = "Tài khoản không tồn tại";
+    res.status(status).json({ status, message });
+    return;
+  }
+
+  const currentUser={...user}
+  delete currentUser.password
+  // console.log({verifyTokenResult})
+  res.status(200).json({ currentUser });
+});
+
+server.put("/user/update/:id", (req, res) => {
+  const { id } = req.params;
+  const dataUser = req.body;
+  console.log(`update user id = ${id}; request body:`);
+  console.log(req.body);
+ 
+
+  fs.readFile(pathuser, (err, data) => {
+    if (err) {
+      const status = 401;
+      const message = err;
+      res.status(status).json({ status, message });
+      return;
+    }
+
+    // Get current users data
+    let newData = JSON.parse(data.toString());
+
+    newData.users = newData.users.map((user) => {
+      if (user.id?.toString() === id?.toString()) {
+        return { ...user, ...dataUser };
+      }
+      return user;
+    });
+
+    fs.writeFile(pathuser, JSON.stringify(newData), (err, result) => {
+      // WRITE
+      if (err) {
+        const status = 401;
+        const message = err;
+        res.status(status).json({ status, message });
+        return;
+      }
+    });
+  });
+
+ 
+  res.status(200).json({ status:200,message:'Cập nhật thông tin tài khoản thành công' });
+});
+
 server.use(/^(?!\/auth).*$/, (req, res, next) => {
   if (req.headers.authorization === undefined) {
     const status = 401;
-    const message = "Error in authorization format";
+    const message = "Lỗi thông tin xác thực";
     res.status(status).json({ status, message });
     return;
   }
@@ -115,14 +190,14 @@ server.use(/^(?!\/auth).*$/, (req, res, next) => {
 
     if (verifyTokenResult instanceof Error) {
       const status = 401;
-      const message = "Access token not provided";
+      const message = "Token không đúng";
       res.status(status).json({ status, message });
       return;
     }
     next();
   } catch (err) {
     const status = 401;
-    const message = "Error access_token is revoked";
+    const message = "Token hết hạn";
     res.status(status).json({ status, message });
   }
 });
