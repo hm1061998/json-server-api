@@ -103,9 +103,7 @@ server.post("/auth/login", (req, res) => {
 });
 
 server.use(/^(?!\/auth).*$/, (req, res, next) => {
-  if (
-    req.headers.authorization === undefined 
-  ) {
+  if (req.headers.authorization === undefined) {
     const status = 401;
     const message = "Error in authorization format";
     res.status(status).json({ status, message });
@@ -131,6 +129,6 @@ server.use(/^(?!\/auth).*$/, (req, res, next) => {
 
 server.use(router);
 
-server.listen(8000, () => {
+server.listen(process.env.PORT || 8000, () => {
   console.log("Run Auth API Server");
 });
